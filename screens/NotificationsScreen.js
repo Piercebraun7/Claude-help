@@ -52,7 +52,7 @@ export default function NotificationsScreen() {
         contentContainerStyle={styles.list}
         ListHeaderComponent={
           <View style={styles.headerArea}>
-            <Text style={styles.title}>Notifications</Text>
+            <Text style={styles.title}>Alerts</Text>
 
             <Card style={styles.settingsCard}>
               <Text style={styles.settingsTitle}>Preferences</Text>

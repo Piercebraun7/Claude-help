@@ -1,11 +1,12 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
-import IssuesScreen from '../screens/IssuesScreen';
+import ScansScreen from '../screens/ScansScreen';
 import RequestsScreen from '../screens/RequestsScreen';
 import NewRequestScreen from '../screens/NewRequestScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
@@ -25,19 +26,36 @@ function RequestsStackScreen() {
   );
 }
 
+const TAB_ICONS = {
+  Home: 'home',
+  Scans: 'camera',
+  Requests: 'clipboard',
+  Alerts: 'notifications',
+  Help: 'help-circle',
+};
+
 function ResidentTabs() {
   return (
     <Tab.Navigator
-      screenOptions={{
+      screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
-      }}
+        tabBarLabelStyle: { fontSize: 12, fontWeight: '600' },
+        tabBarStyle: { height: 64, paddingBottom: 8, paddingTop: 6 },
+        tabBarIcon: ({ focused, color, size }) => (
+          <Ionicons
+            name={focused ? TAB_ICONS[route.name] : `${TAB_ICONS[route.name]}-outline`}
+            size={size}
+            color={color}
+          />
+        ),
+      })}
     >
       <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Issues" component={IssuesScreen} />
+      <Tab.Screen name="Scans" component={ScansScreen} />
       <Tab.Screen name="Requests" component={RequestsStackScreen} />
-      <Tab.Screen name="Notifications" component={NotificationsScreen} />
+      <Tab.Screen name="Alerts" component={NotificationsScreen} />
       <Tab.Screen name="Help" component={HelpScreen} />
     </Tab.Navigator>
   );

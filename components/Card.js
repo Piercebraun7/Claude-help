@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { colors, radius, spacing } from '../lib/theme';
+import { colors, radius, shadow, spacing } from '../lib/theme';
 
 export default function Card({ children, style }) {
   return <View style={[styles.card, style]}>{children}</View>;
@@ -8,9 +8,8 @@ export default function Card({ children, style }) {
 const styles = StyleSheet.create({
   card: {
     backgroundColor: colors.surface,
-    borderRadius: radius.md,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderRadius: radius.lg,
     padding: spacing.md,
+    ...shadow,
   },
 });

@@ -1,40 +1,70 @@
 import { useEffect, useState } from 'react';
-import { RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { getResidentContext } from '../lib/queries';
-import { MOCK_ISSUES } from '../lib/mockIssues';
+import { getResidentContext, listUnitScans } from '../lib/queries';
 import Card from '../components/Card';
-import StatusPill from '../components/StatusPill';
 import { LoadingState, ErrorState } from '../components/ScreenState';
-import { colors, spacing } from '../lib/theme';
+import { colors, radius, spacing, status as statusTheme } from '../lib/theme';
 
-function nextServiceDay(schedule) {
+const DAY_LABELS = { mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun' };
+const RECENT_NIGHTS = 14;
+
+function nextServiceDays(schedule) {
   if (!schedule || typeof schedule !== 'object') return null;
-  const days = Object.keys(schedule).filter((day) => schedule[day]);
+  const days = Object.keys(schedule)
+    .filter((day) => schedule[day])
+    .map((day) => DAY_LABELS[day.toLowerCase()] ?? day);
   return days.length ? days.join(', ') : null;
 }
 
-export default function HomeScreen() {
+function relativeDay(value) {
+  if (!value) return null;
+  const then = new Date(value);
+  const now = new Date();
+  const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate());
+  const startOfNow = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.round((startOfNow - startOfThen) / (1000 * 60 * 60 * 24));
+  const time = then.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (dayDiff <= 0) return `Today at ${time}`;
+  if (dayDiff === 1) return `Yesterday at ${time}`;
+  if (dayDiff < 7) return `${dayDiff} days ago`;
+  return then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function overallStatus(recentScans) {
+  if (recentScans.some((s) => s.violation)) return 'action';
+  if (recentScans.some((s) => s.was_serviced === false || s.loose_trash || s.cardboard || s.unserviceable)) {
+    return 'heads_up';
+  }
+  return 'good';
+}
+
+export default function HomeScreen({ navigation }) {
   const { profile, signOut } = useAuth();
-  const [state, setState] = useState({ loading: true, error: null, property: null, unit: null });
+  const unitNumber = profile.units?.unit_number;
+  const [state, setState] = useState({ loading: true, error: null, property: null, unit: null, scans: [] });
 
   const load = () => {
     setState((s) => ({ ...s, loading: true, error: null }));
-    getResidentContext(profile.property_id, profile.unit_id)
-      .then(({ property, unit }) => setState({ loading: false, error: null, property, unit }))
+    Promise.all([
+      getResidentContext(profile.property_id, profile.unit_id),
+      unitNumber ? listUnitScans(profile.property_id, unitNumber, RECENT_NIGHTS) : Promise.resolve([]),
+    ])
+      .then(([{ property, unit }, scans]) => setState({ loading: false, error: null, property, unit, scans }))
       .catch((e) => setState((s) => ({ ...s, loading: false, error: e.message })));
   };
 
-  useEffect(load, [profile.unit_id, profile.property_id]);
+  useEffect(load, [profile.unit_id, profile.property_id, unitNumber]);
 
   if (state.loading) return <LoadingState label="Loading your home..." />;
   if (state.error) return <ErrorState message={state.error} />;
 
-  // Sample data, see lib/mockIssues.js: residents can't yet read the real `issues`
-  // table (no RLS policy grants it), so this count is illustrative, not live.
-  const openIssueCount = MOCK_ISSUES.filter((i) => i.status !== 'other').length;
-  const serviceDays = nextServiceDay(state.property.service_schedule);
+  const key = overallStatus(state.scans);
+  const theme = statusTheme[key];
+  const serviceDays = nextServiceDays(state.property.service_schedule);
+  const lastServiced = relativeDay(state.scans[0]?.start_time);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -44,48 +74,55 @@ export default function HomeScreen() {
       >
         <View style={styles.headerRow}>
           <View>
+            <Text style={styles.eyebrow}>{state.property.name}</Text>
             <Text style={styles.greeting}>Unit {state.unit.unit_number}</Text>
-            <Text style={styles.address}>{state.property.name}</Text>
           </View>
-          <StatusPill
-            label={state.unit.status}
-            tone={state.unit.status === 'active' ? 'positive' : 'neutral'}
-          />
+          <Pressable style={styles.signOutButton} onPress={signOut} hitSlop={12}>
+            <Ionicons name="log-out-outline" size={22} color={colors.textMuted} />
+          </Pressable>
         </View>
 
-        <Card style={styles.card}>
-          <Text style={styles.cardLabel}>Next scheduled pickup</Text>
-          <Text style={styles.cardValue}>{serviceDays ?? 'Not set for this property'}</Text>
-        </Card>
-
-        <Card style={styles.card}>
-          <View style={styles.cardHeaderRow}>
-            <Text style={styles.cardLabel}>Flags on your unit</Text>
-            <StatusPill
-              label={openIssueCount === 0 ? 'All clear' : `${openIssueCount} recent`}
-              tone={openIssueCount === 0 ? 'positive' : 'warning'}
-            />
+        <Pressable onPress={() => navigation.navigate('Scans')}>
+          <View style={[styles.heroCard, { backgroundColor: theme.bg }]}>
+            <Text style={styles.heroEmoji}>{theme.emoji}</Text>
+            <Text style={[styles.heroLabel, { color: theme.fg }]}>{theme.label}</Text>
+            <Text style={[styles.heroHint, { color: theme.fg }]}>
+              {key === 'good' ? 'Nothing needs your attention right now.' : 'Tap to see your recent photos.'}
+            </Text>
           </View>
-          <Text style={styles.cardHint}>
-            {openIssueCount === 0
-              ? 'No documented issues at your door recently.'
-              : 'See the Issues tab for photos and details.'}
-          </Text>
-          <Text style={styles.previewNote}>Sample data for this design preview, see Issues tab.</Text>
-        </Card>
+        </Pressable>
+
+        <View style={styles.row}>
+          <Card style={[styles.card, styles.halfCard]}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="camera-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={styles.cardLabel}>Last serviced</Text>
+            <Text style={styles.cardValue}>{lastServiced ?? 'No record yet'}</Text>
+          </Card>
+
+          <Card style={[styles.card, styles.halfCard]}>
+            <View style={styles.iconCircle}>
+              <Ionicons name="calendar-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={styles.cardLabel}>Next pickup</Text>
+            <Text style={styles.cardValue}>{serviceDays ?? 'Not set'}</Text>
+          </Card>
+        </View>
 
         {state.unit.strike_count > 0 ? (
           <Card style={[styles.card, styles.warningCard]}>
-            <Text style={[styles.cardLabel, { color: colors.warning }]}>
-              Strike count: {state.unit.strike_count}
-            </Text>
-            <Text style={styles.cardHint}>Repeated documented issues can lead to fees, check your lease terms.</Text>
+            <View style={styles.rowBetween}>
+              <View style={styles.iconCircleWarning}>
+                <Ionicons name="warning-outline" size={20} color={colors.warning} />
+              </View>
+              <Text style={[styles.cardValue, { color: colors.warning }]}>
+                {state.unit.strike_count} {state.unit.strike_count === 1 ? 'strike' : 'strikes'} on file
+              </Text>
+            </View>
+            <Text style={styles.cardHint}>Repeated issues can lead to fees, check your lease for details.</Text>
           </Card>
         ) : null}
-
-        <Text style={styles.switchLink} onPress={signOut}>
-          Sign out
-        </Text>
       </ScrollView>
     </SafeAreaView>
   );
@@ -93,16 +130,50 @@ export default function HomeScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
-  content: { padding: spacing.md, gap: spacing.md },
-  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
-  greeting: { fontSize: 24, fontWeight: '700', color: colors.text },
-  address: { fontSize: 14, color: colors.textMuted, marginTop: 2 },
+  content: { padding: spacing.md, gap: spacing.md, paddingBottom: spacing.xl },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  eyebrow: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
+  greeting: { fontSize: 26, fontWeight: '800', color: colors.text, marginTop: 2 },
+  signOutButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroCard: {
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    alignItems: 'center',
+    gap: 4,
+  },
+  heroEmoji: { fontSize: 44 },
+  heroLabel: { fontSize: 22, fontWeight: '800' },
+  heroHint: { fontSize: 14, textAlign: 'center' },
+  row: { flexDirection: 'row', gap: spacing.sm },
   card: { gap: spacing.xs },
-  cardHeaderRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  cardLabel: { fontSize: 13, color: colors.textMuted, fontWeight: '600' },
-  cardValue: { fontSize: 18, fontWeight: '600', color: colors.text, textTransform: 'capitalize' },
-  cardHint: { fontSize: 13, color: colors.textMuted },
-  previewNote: { fontSize: 11, color: colors.warning },
-  warningCard: { backgroundColor: colors.warningSoft, borderColor: colors.warningSoft },
-  switchLink: { textAlign: 'center', color: colors.primary, fontSize: 13, marginTop: spacing.md },
+  halfCard: { flex: 1 },
+  iconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  iconCircleWarning: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: colors.warningSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cardLabel: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  cardValue: { fontSize: 16, fontWeight: '700', color: colors.text },
+  cardHint: { fontSize: 12, color: colors.textMuted, marginTop: spacing.xs },
+  rowBetween: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  warningCard: { backgroundColor: colors.warningSoft },
 });

@@ -52,6 +52,23 @@ the thing that exploits it.
 
 ## Known issues to keep front of mind
 
+- **`runner_scans` (the nightly photo of every unit) is readable by any
+  authenticated user, for any property, with no scoping at all.** Verified
+  directly: signed in as the test resident account with zero filters applied,
+  the query returned all 179,807 rows across every property in the portfolio,
+  not just the signed-in resident's own unit. The `view_all_scans` policy on
+  this table is `USING (true)` for the `authenticated` role, full stop. This
+  means today, any resident (or anyone else with a login) could see photos of
+  every other resident's door across the whole company just by removing a
+  filter, whether or not this app exists. This is more serious than the other
+  gaps below since it's cross-tenant photo data, not just a locked door with no
+  data behind it. Pierce is aware, raise with Alexander directly, don't treat
+  this as something to quietly work around. This app always filters
+  `listUnitScans` (`lib/queries.js`) to the signed-in resident's own
+  `property_id` and `unit_number`, every call, but that's this app being
+  careful, not the actual fix, the policy itself needs a `resident_profiles`
+  ownership check added.
+
 - **Residents cannot currently SELECT their own rows in `issues` or
   `resident_service_requests`.** Verified directly: 16 real rows exist in `issues`
   for the test account's unit, but a signed-in resident session sees 0, because the
@@ -60,10 +77,13 @@ the thing that exploits it.
   just hasn't bitten yet because that table has 0 rows today. This looks like an
   oversight given the table is literally named for resident self-service, worth
   raising with Alexander directly rather than assuming it's intentional.
-  `screens/IssuesScreen.js` and the flag count on `screens/HomeScreen.js` use
-  `lib/mockIssues.js` (clearly labeled in the UI) instead of live data because of
-  this, `lib/queries.js`'s `listUnitIssues` is unused for now but should work
-  as-is once the policy exists.
+  Worked around by building the "what's going on with my unit" experience on top
+  of `runner_scans` instead (see `screens/ScansScreen.js`, `screens/HomeScreen.js`),
+  which is readable (arguably too readable, see above) and already carries
+  per-scan flags (`loose_trash`, `cardboard`, `unserviceable`, `violation`,
+  `was_serviced`) plus an AI-generated description. `lib/queries.js`'s
+  `listUnitIssues` is unused for now but should work as-is once the `issues`
+  policy exists, if that ever becomes the preferred data source instead.
 
 - **19 tables currently have row-level security disabled**, including
   `properties`, `units`, `waste_invoices`, `waste_invoice_line_items`,
