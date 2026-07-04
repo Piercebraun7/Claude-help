@@ -44,8 +44,26 @@ the thing that exploits it.
 - This prototype: Expo (React Native), blank template
 - Connection: `@supabase/supabase-js` using `EXPO_PUBLIC_SUPABASE_URL` and
   `EXPO_PUBLIC_SUPABASE_ANON_KEY` from `.env` (gitignored, see `.env.example`)
+- Auth: real Supabase Auth email/password sign-in (`screens/LoginScreen.js`), not a
+  fake picker. A resident's own row in `resident_profiles` loads automatically via
+  RLS (`auth.uid() = user_id`) once signed in, see `context/AuthContext.js`.
+- Test account: `alexander@kaizen-waste.com`, role `resident`, unit 109 at Village
+  at Liberty Farms. Pre-existing account, not created by this repo.
 
 ## Known issues to keep front of mind
+
+- **Residents cannot currently SELECT their own rows in `issues` or
+  `resident_service_requests`.** Verified directly: 16 real rows exist in `issues`
+  for the test account's unit, but a signed-in resident session sees 0, because the
+  only SELECT policies on that table are for property managers and runners, not
+  residents. Same shape of gap on `resident_service_requests` (staff/PM only), it
+  just hasn't bitten yet because that table has 0 rows today. This looks like an
+  oversight given the table is literally named for resident self-service, worth
+  raising with Alexander directly rather than assuming it's intentional.
+  `screens/IssuesScreen.js` and the flag count on `screens/HomeScreen.js` use
+  `lib/mockIssues.js` (clearly labeled in the UI) instead of live data because of
+  this, `lib/queries.js`'s `listUnitIssues` is unused for now but should work
+  as-is once the policy exists.
 
 - **19 tables currently have row-level security disabled**, including
   `properties`, `units`, `waste_invoices`, `waste_invoice_line_items`,
